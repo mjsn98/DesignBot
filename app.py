@@ -33,8 +33,43 @@ class EstadoDiseno(Enum):
 
 
 class DisenoManager:
+        # NUEVO: tabla de precios
+    precios_base = {
+        "SILLA": 20000,
+        "MESA": 35000,
+        "SOFÁ": 65000,
+        "ESTANTERÍA": 50000,
+        "ARMARIO": 90000,
+        "CAMA": 80000
+    }
+
+    multiplicadores_material = {
+        "MADERA_NOBLE": 1.6,
+        "MADERA_MDF": 1.2,
+        "METAL": 1.5,
+        "VIDRIO": 1.8,
+        "PLÁSTICO": 1.0
+    }
+
+    multiplicadores_dimensiones = {
+        "PEQUEÑO": 1.0,
+        "ESTÁNDAR": 1.3,
+        "GRANDE": 1.6,
+        "EXTRA_GRANDE": 2.0
+    }
+
+
     def __init__(self):
         self.reiniciar_diseno()
+
+    def calcular_cotizacion(self):
+        try:
+            precio_base = self.precios_base.get(self.tipo_mueble, 0)
+            mult_material = self.multiplicadores_material.get(self.material, 1)
+            mult_dim = self.multiplicadores_dimensiones.get(self.dimensiones, 1)
+            return round(precio_base * mult_material * mult_dim, 2)
+        except:
+            return 0
 
     def reiniciar_diseno(self):
         self.estado = EstadoDiseno.INICIO
@@ -77,12 +112,18 @@ class DisenoManager:
         self.estado = EstadoDiseno.PEDIDO_GUARDADO
 
     def obtener_resumen_actual(self):
-        return f"""
-🪑 Tipo de mueble: {self.tipo_mueble}
-🔩 Material: {self.material}
-🎨 Color: {self.color}
-📏 Dimensiones: {self.dimensiones}
-"""
+        precio = self.calcular_cotizacion()
+
+        return (
+    f"""
+    🪑 Tipo de mueble: {self.tipo_mueble}
+    🔩 Material: {self.material}
+    🎨 Color: {self.color}
+    📏 Dimensiones: {self.dimensiones}
+    💵 Cotización estimada: ${precio:,}
+    """
+        )
+
 
     def obtener_datos_pedido(self, nombre_cliente):
         return {
@@ -91,13 +132,14 @@ class DisenoManager:
             'material': self.material,
             'color': self.color,
             'dimensiones': self.dimensiones,
+            'cotizacion': self.calcular_cotizacion(),
             'contacto': self.info_contacto,
             'fecha': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'estado': 'Confirmado'
         }
 
-# 3. LLM Personalizado - VERSIÓN SIMPLIFICADA
 
+# 3. LLM Personalizado - VERSIÓN SIMPLIFICADA
 
 class DesignBotLLM(BaseLanguageModel):
     class Config:
@@ -301,11 +343,14 @@ class DesignBotLLM(BaseLanguageModel):
                 if k in user_input_lower:
                     self.diseno_manager.establecer_dimensiones(v)
                     resumen = self.diseno_manager.obtener_resumen_actual()
-                    return f"""
-    📝 **RESUMEN DE TU DISEÑO**
-    {resumen}
-    ¿Confirmás este diseño? (responde 'sí' o 'no')
-    """
+                    precio = self.diseno_manager.calcular_cotizacion()
+                    return (
+f"""📝 **RESUMEN DE TU DISEÑO**
+{resumen}
+💵 **Cotización estimada:** ${precio:,}
+¿Confirmás este diseño? (responde 'sí' o 'no')"""
+)
+
 
             return "No reconozco esas dimensiones. ¿Podrías elegir entre: pequeño, estándar o grande?"
 
@@ -330,14 +375,15 @@ class DesignBotLLM(BaseLanguageModel):
                 # Marcar que hay un pedido listo para guardar
                 self.diseno_manager.pedido_listo_para_guardar = True
 
-                return f"""
-    🎉 ¡DISEÑO CONFIRMADO! 🎉
+                return (
+f"""🎉 ¡DISEÑO CONFIRMADO! 🎉
 
-    {resumen}
-    📧 Contactaremos a {nombre_cliente_temp} en: {user_input}
+{resumen}
+📧 Contactaremos a {nombre_cliente_temp} en: {user_input}
 
-    ¿Te gustaría diseñar otro mueble? Responde 'sí' para continuar o 'no' para finalizar.
-    """
+¿Te gustaría diseñar otro mueble? Responde 'sí' para continuar o 'no' para finalizar."""
+)
+
             else:
                 return "Por favor, proporciona tu email o teléfono para contactarte."
 
@@ -495,6 +541,7 @@ def mostrar_pedidos():
             'Material': pedido['material'],
             'Color': pedido['color'],
             'Dimensiones': pedido['dimensiones'],
+            'Cotización': pedido.get('cotizacion', 0),
             'Contacto': pedido['contacto'],
             'Fecha': pedido['fecha'],
             'Estado': pedido['estado']
