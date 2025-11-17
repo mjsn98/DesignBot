@@ -17,6 +17,8 @@ import asyncio
 from langchain_core.prompt_values import PromptValue
 
 # 1. Estados del diseño
+
+
 class EstadoDiseno(Enum):
     INICIO = 0
     ESPERANDO_TIPO_MUEBLE = 1
@@ -28,6 +30,8 @@ class EstadoDiseno(Enum):
     PEDIDO_GUARDADO = 7
 
 # 2. Gestor del Diseño
+
+
 class DisenoManager:
     def __init__(self):
         self.reiniciar_diseno()
@@ -93,6 +97,8 @@ class DisenoManager:
         }
 
 # 3. LLM Personalizado - VERSIÓN SIMPLIFICADA
+
+
 class DesignBotLLM(BaseLanguageModel):
     class Config:
         arbitrary_types_allowed = True
@@ -110,45 +116,69 @@ class DesignBotLLM(BaseLanguageModel):
     def _call(self, prompt: str, stop=None, **kwargs):
         # Estrategia múltiple para extraer el input del usuario
         user_input = ""
-        
+
         # Dividir en líneas y buscar el último input del usuario
         lines = prompt.strip().split('\n')
-        
+
         # Buscar desde el final hacia el principio
         for i in range(len(lines)-1, -1, -1):
             line = lines[i].strip()
-            
+
             # Estrategia 1: Buscar "Usuario:"
             if line.startswith('Usuario:'):
                 user_input = line[8:].strip()
                 break
-            
+
             # Estrategia 2: Buscar "Human:"
             elif line.startswith('Human:'):
                 user_input = line[6:].strip()
                 break
-            
+
             # Estrategia 3: Buscar "input:"
             elif line.startswith('input:'):
                 user_input = line[6:].strip()
                 break
-            
+
             # Estrategia 4: Si estamos en la última línea y no tiene prefijo conocido
             elif i == len(lines)-1 and not any(line.startswith(x) for x in ['AI:', 'DesignBot:', 'System:']):
                 user_input = line
                 break
-        
+
         # Si no encontramos nada, usar la última línea
         if not user_input:
             user_input = lines[-1].strip()
-        
+
         # Limpiar posibles restos de prefijos
-        user_input = user_input.replace('Human:', '').replace('Usuario:', '').replace('input:', '').strip()
-        
+        user_input = user_input.replace('Human:', '').replace(
+            'Usuario:', '').replace('input:', '').strip()
+
         user_input_lower = user_input.lower()
-        
+
         # --- LÓGICA PRINCIPAL MEJORADA ---
-        
+
+        # DETECTAR SI QUIERE DISEÑAR OTRO MUEBLE (después de un pedido confirmado)
+        if (self.diseno_manager.estado == EstadoDiseno.PEDIDO_GUARDADO or
+                (self.diseno_manager.estado == EstadoDiseno.INICIO and self.nombre_cliente is not None)):
+
+            # Si el usuario QUIERE diseñar otro mueble
+            if any(palabra in user_input_lower for palabra in ["sí", "si", "sí,", "si,", "otro", "nuevo", "diseñar", "mueble", "silla", "mesa", "sofá", "sofa", "estantería", "estanteria"]):
+                # El usuario quiere diseñar otro mueble, reiniciamos el diseño pero mantenemos el nombre
+                self.diseno_manager.reiniciar_diseno()
+                self.diseno_manager.estado = EstadoDiseno.ESPERANDO_TIPO_MUEBLE
+                return f"¡Perfecto {self.nombre_cliente}! Vamos a diseñar otro mueble. ¿Qué tipo te gustaría: silla, mesa, sofá o estantería?"
+
+            # Si el usuario NO QUIERE diseñar otro mueble
+            elif any(palabra in user_input_lower for palabra in ["no", "no,", "gracias", "por ahora", "más tarde", "después", "cancelar", "salir"]):
+                # Reiniciamos completamente la conversación
+                nombre_temp = self.nombre_cliente
+                self.diseno_manager.reiniciar_diseno()
+                self.nombre_cliente = None
+
+                if nombre_temp:
+                    return f"¡Entendido {nombre_temp}! Fue un placer ayudarte a diseñar tus muebles. 😊\n\nSi en el futuro necesitas diseñar otro mueble, ¡estaré aquí para ayudarte! ¡Hasta pronto!"
+                else:
+                    return "¡Entendido! Fue un placer ayudarte. 😊\n\nSi en el futuro necesitas diseñar muebles, ¡estaré aquí para ayudarte! ¡Hasta pronto!"
+
         # SALUDO INICIAL
         if self.diseno_manager.estado == EstadoDiseno.INICIO:
             if any(s in user_input_lower for s in ["hola", "hello", "buenos días", "buenas"]):
@@ -162,14 +192,14 @@ class DesignBotLLM(BaseLanguageModel):
                         nombre = user_input_lower.split("nombre es")[1].strip()
                     else:
                         nombre = user_input_lower
-                    
+
                     # Tomar solo la primera palabra como nombre
                     self.nombre_cliente = nombre.split()[0].title()
                     self.diseno_manager.estado = EstadoDiseno.ESPERANDO_TIPO_MUEBLE
                     return f"¡Hola {self.nombre_cliente}! ¿Qué tipo de mueble te gustaría diseñar? Tenemos: silla, mesa, sofá, estantería."
                 else:
                     return "¡Hola! Soy DesignBot, tu asistente para diseño de muebles. ¿Cómo te llamas?"
-            
+
             # Si es solo un nombre
             elif len(user_input.split()) == 1 and user_input.replace('.', '').replace(',', '').isalpha():
                 self.nombre_cliente = user_input.title()
@@ -180,7 +210,7 @@ class DesignBotLLM(BaseLanguageModel):
         if self.diseno_manager.estado == EstadoDiseno.ESPERANDO_TIPO_MUEBLE:
             tipos = {
                 "silla": "SILLA",
-                "mesa": "MESA", 
+                "mesa": "MESA",
                 "sofá": "SOFÁ",
                 "sofa": "SOFÁ",
                 "estantería": "ESTANTERÍA",
@@ -192,7 +222,7 @@ class DesignBotLLM(BaseLanguageModel):
                 if k in user_input_lower:
                     self.diseno_manager.establecer_tipo_mueble(v)
                     return "¡Excelente elección! ¿Qué material prefieres: madera noble, MDF, metal o vidrio?"
-            
+
             # Si no reconoce el tipo de mueble
             return "No reconozco ese tipo de mueble. ¿Podrías elegir entre: silla, mesa, sofá o estantería?"
 
@@ -200,7 +230,7 @@ class DesignBotLLM(BaseLanguageModel):
         if self.diseno_manager.estado == EstadoDiseno.ESPERANDO_MATERIAL:
             materiales = {
                 "madera noble": "MADERA_NOBLE",
-                "mdf": "MADERA_MDF", 
+                "mdf": "MADERA_MDF",
                 "metal": "METAL",
                 "vidrio": "VIDRIO",
                 "plástico": "PLÁSTICO",
@@ -210,14 +240,14 @@ class DesignBotLLM(BaseLanguageModel):
                 if k in user_input_lower:
                     self.diseno_manager.establecer_material(v)
                     return "Perfecto. Ahora elige el color: natural, blanco, negro o madera oscura."
-            
+
             return "No reconozco ese material. ¿Podrías elegir entre: madera noble, MDF, metal o vidrio?"
 
         # COLOR
         if self.diseno_manager.estado == EstadoDiseno.ESPERANDO_COLOR:
             colores = {
                 "natural": "NATURAL",
-                "blanco": "BLANCO", 
+                "blanco": "BLANCO",
                 "negro": "NEGRO",
                 "madera oscura": "MADERA_OSCURA",
                 "rojo": "ROJO",
@@ -228,7 +258,7 @@ class DesignBotLLM(BaseLanguageModel):
                 if k in user_input_lower:
                     self.diseno_manager.establecer_color(v)
                     return "Muy bien. Por último, selecciona las dimensiones: pequeño, estándar o grande."
-            
+
             return "No reconozco ese color. ¿Podrías elegir entre: natural, blanco, negro o madera oscura?"
 
         # DIMENSIONES
@@ -236,7 +266,7 @@ class DesignBotLLM(BaseLanguageModel):
             dims = {
                 "pequeño": "PEQUEÑO",
                 "pequeno": "PEQUEÑO",
-                "estándar": "ESTÁNDAR", 
+                "estándar": "ESTÁNDAR",
                 "estandar": "ESTÁNDAR",
                 "grande": "GRANDE",
                 "xl": "EXTRA_GRANDE",
@@ -247,11 +277,11 @@ class DesignBotLLM(BaseLanguageModel):
                     self.diseno_manager.establecer_dimensiones(v)
                     resumen = self.diseno_manager.obtener_resumen_actual()
                     return f"""
-📝 **RESUMEN DE TU DISEÑO**
-{resumen}
-¿Confirmás este diseño? (responde 'sí' o 'no')
-"""
-            
+    📝 **RESUMEN DE TU DISEÑO**
+    {resumen}
+    ¿Confirmás este diseño? (responde 'sí' o 'no')
+    """
+
             return "No reconozco esas dimensiones. ¿Podrías elegir entre: pequeño, estándar o grande?"
 
         # CONFIRMACIÓN
@@ -271,18 +301,18 @@ class DesignBotLLM(BaseLanguageModel):
                 self.diseno_manager.establecer_info_contacto(user_input)
                 resumen = self.diseno_manager.obtener_resumen_actual()
                 nombre_cliente_temp = self.nombre_cliente or "Cliente"
-                
+
                 # Marcar que hay un pedido listo para guardar
                 self.diseno_manager.pedido_listo_para_guardar = True
 
                 return f"""
-🎉 ¡DISEÑO CONFIRMADO! 🎉
+    🎉 ¡DISEÑO CONFIRMADO! 🎉
 
-{resumen}
-📧 Contactaremos a {nombre_cliente_temp} en: {user_input}
+    {resumen}
+    📧 Contactaremos a {nombre_cliente_temp} en: {user_input}
 
-¿Te gustaría diseñar otro mueble? ¡Solo dime qué tipo te gustaría!
-"""
+    ¿Te gustaría diseñar otro mueble? Responde 'sí' para continuar o 'no' para finalizar.
+    """
             else:
                 return "Por favor, proporciona tu email o teléfono para contactarte."
 
@@ -362,6 +392,8 @@ class DesignBotLLM(BaseLanguageModel):
         return AIMessage(content=response_text)
 
 # 4. Cadena Final MODIFICADA para guardar pedidos
+
+
 class DesignBotChain:
     def __init__(self, llm, prompt, memory):
         self.llm = llm
@@ -370,56 +402,64 @@ class DesignBotChain:
 
     def predict(self, user_input):
         history = self.memory.load_memory_variables({})["chat_history"]
-        prompt_final = self.prompt.format(chat_history=history, input=user_input)
+        prompt_final = self.prompt.format(
+            chat_history=history, input=user_input)
         respuesta = self.llm.invoke(prompt_final)
-        
+
         # VERIFICAR Y GUARDAR PEDIDO después de obtener la respuesta
-        if (hasattr(self.llm.diseno_manager, 'pedido_listo_para_guardar') and 
-            self.llm.diseno_manager.pedido_listo_para_guardar):
-            
-            pedido = self.llm.diseno_manager.obtener_datos_pedido(self.llm.nombre_cliente)
-            
+        if (hasattr(self.llm.diseno_manager, 'pedido_listo_para_guardar') and
+                self.llm.diseno_manager.pedido_listo_para_guardar):
+
+            pedido = self.llm.diseno_manager.obtener_datos_pedido(
+                self.llm.nombre_cliente)
+
             # Guardar en session_state
             if 'pedidos' not in st.session_state:
                 st.session_state.pedidos = []
             st.session_state.pedidos.append(pedido)
-            
+
             # Reiniciar el flag
             self.llm.diseno_manager.pedido_listo_para_guardar = False
             self.llm.diseno_manager.reiniciar_diseno()
-        
+
         self.memory.save_context({"input": user_input}, {"output": respuesta})
         return respuesta
 
 # 5. Funciones para mostrar pedidos
+
+
 def mostrar_pedidos():
     """Muestra la lista de pedidos realizados"""
     st.header("📋 Pedidos Realizados")
-    
+
     if 'pedidos' not in st.session_state or len(st.session_state.pedidos) == 0:
-        st.info("📝 Aún no hay pedidos realizados. ¡Comienza a diseñar muebles en el chat!")
+        st.info(
+            "📝 Aún no hay pedidos realizados. ¡Comienza a diseñar muebles en el chat!")
         return
-    
+
     pedidos = st.session_state.pedidos
-    
+
     # Mostrar métricas rápidas
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Pedidos", len(pedidos))
     with col2:
-        pedidos_hoy = len([p for p in pedidos if p['fecha'].startswith(datetime.now().strftime("%Y-%m-%d"))])
+        pedidos_hoy = len([p for p in pedidos if p['fecha'].startswith(
+            datetime.now().strftime("%Y-%m-%d"))])
         st.metric("Pedidos Hoy", pedidos_hoy)
     with col3:
         tipos_count = {}
         for p in pedidos:
-            tipos_count[p['tipo_mueble']] = tipos_count.get(p['tipo_mueble'], 0) + 1
-        tipo_popular = max(tipos_count, key=tipos_count.get) if tipos_count else "N/A"
+            tipos_count[p['tipo_mueble']] = tipos_count.get(
+                p['tipo_mueble'], 0) + 1
+        tipo_popular = max(
+            tipos_count, key=tipos_count.get) if tipos_count else "N/A"
         st.metric("Mueble Más Popular", tipo_popular)
     with col4:
         st.metric("Clientes Únicos", len(set(p['nombre'] for p in pedidos)))
-    
+
     st.markdown("---")
-    
+
     # Crear DataFrame para mostrar los pedidos
     df_data = []
     for i, pedido in enumerate(pedidos):
@@ -434,9 +474,9 @@ def mostrar_pedidos():
             'Fecha': pedido['fecha'],
             'Estado': pedido['estado']
         })
-    
+
     df = pd.DataFrame(df_data)
-    
+
     # Opciones de filtrado
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -454,7 +494,7 @@ def mostrar_pedidos():
             "Filtrar por cliente",
             ["Todos"] + list(df['Cliente'].unique())
         )
-    
+
     # Aplicar filtros
     df_filtrado = df.copy()
     if filtro_mueble != "Todos":
@@ -463,10 +503,10 @@ def mostrar_pedidos():
         df_filtrado = df_filtrado[df_filtrado['Estado'] == filtro_estado]
     if filtro_cliente != "Todos":
         df_filtrado = df_filtrado[df_filtrado['Cliente'] == filtro_cliente]
-    
+
     # Mostrar tabla de pedidos
     st.subheader(f"📦 Lista de Pedidos ({len(df_filtrado)} pedidos)")
-    
+
     # Estilizar la tabla
     st.dataframe(
         df_filtrado,
@@ -484,11 +524,12 @@ def mostrar_pedidos():
             "Estado": st.column_config.SelectboxColumn(
                 "Estado",
                 width="medium",
-                options=["Confirmado", "En producción", "Completado", "Cancelado"]
+                options=["Confirmado", "En producción",
+                         "Completado", "Cancelado"]
             )
         }
     )
-    
+
     # Opción para exportar datos
     if st.button("📤 Exportar Pedidos a CSV"):
         csv = df.to_csv(index=False)
@@ -498,13 +539,13 @@ def mostrar_pedidos():
             file_name=f"pedidos_designbot_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
-    
+
     # Resumen visual simple
     st.markdown("---")
     st.subheader("📊 Resumen Visual")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         # Gráfico de tipos de muebles
         tipo_counts = df['Mueble'].value_counts()
@@ -517,7 +558,7 @@ def mostrar_pedidos():
             color_continuous_scale='blues'
         )
         st.plotly_chart(fig_tipos, use_container_width=True)
-    
+
     with col2:
         # Gráfico de materiales
         material_counts = df['Material'].value_counts()
@@ -530,6 +571,8 @@ def mostrar_pedidos():
         st.plotly_chart(fig_materiales, use_container_width=True)
 
 # 6. Configuración de Streamlit
+
+
 def main():
     st.set_page_config(
         page_title="DesignBot - Asistente de Diseño",
@@ -537,16 +580,16 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+
     # Inicializar pedidos en session_state si no existen
     if 'pedidos' not in st.session_state:
         st.session_state.pedidos = []
-    
+
     # Sidebar
     with st.sidebar:
         st.title("🪑 DesignBot")
         st.markdown("---")
-        
+
         st.subheader("Configuración")
         if st.button("🧹 Reiniciar Conversación"):
             st.session_state.messages = []
@@ -555,28 +598,28 @@ def main():
                 st.session_state.chatbot.llm.diseno_manager.reiniciar_diseno()
                 st.session_state.chatbot.llm.nombre_cliente = None
             st.rerun()
-        
+
         # Botón para limpiar pedidos (útil para testing)
         if st.button("🗑️ Limpiar Pedidos"):
             st.session_state.pedidos = []
             st.rerun()
-        
+
         st.markdown("---")
         st.subheader("Navegación")
         if st.button("📋 Ver Pedidos"):
             st.session_state.mostrar_pedidos = True
         if st.button("💬 Volver al Chat"):
             st.session_state.mostrar_pedidos = False
-        
+
         st.markdown("---")
         st.subheader("Estadísticas Rápidas")
         total_pedidos = len(st.session_state.pedidos)
-        pedidos_hoy = len([p for p in st.session_state.pedidos 
+        pedidos_hoy = len([p for p in st.session_state.pedidos
                           if p['fecha'].startswith(datetime.now().strftime("%Y-%m-%d"))])
-        
+
         st.metric("Total Pedidos", total_pedidos)
         st.metric("Pedidos Hoy", pedidos_hoy)
-        
+
         st.markdown("---")
         st.markdown("### Acerca de")
         st.info("""
@@ -587,14 +630,15 @@ def main():
         • Historial de pedidos
         • Gestión de clientes
         """)
-    
+
     # Inicializar session state
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
+
     if "memory" not in st.session_state:
-        st.session_state.memory = ConversationBufferMemory(return_messages=False, memory_key='chat_history')
-    
+        st.session_state.memory = ConversationBufferMemory(
+            return_messages=False, memory_key='chat_history')
+
     if "chatbot" not in st.session_state:
         # Prompt del sistema SIMPLIFICADO
         system_prompt = "Eres DesignBot, un asistente especializado en diseño de muebles personalizados."
@@ -609,43 +653,47 @@ DesignBot:"""
             input_variables=["chat_history", "input"],
             template=template
         )
-        
+
         llm = DesignBotLLM()
-        st.session_state.chatbot = DesignBotChain(llm=llm, prompt=prompt, memory=st.session_state.memory)
-    
+        st.session_state.chatbot = DesignBotChain(
+            llm=llm, prompt=prompt, memory=st.session_state.memory)
+
     if "mostrar_pedidos" not in st.session_state:
         st.session_state.mostrar_pedidos = False
-    
+
     # Título principal
     st.title("🤖 DesignBot - Asistente de Diseño de Muebles")
-    
+
     # Mostrar pedidos o chat
     if st.session_state.mostrar_pedidos:
         mostrar_pedidos()
     else:
         # Área del chat
         st.subheader("💬 Conversación con DesignBot")
-        
+
         # Mostrar historial de mensajes
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
-        
+
         # Input del usuario
         if prompt := st.chat_input("Escribe tu mensaje aquí..."):
             # Agregar mensaje del usuario
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            st.session_state.messages.append(
+                {"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
-            
+
             # Obtener respuesta del bot
             with st.chat_message("assistant"):
                 with st.spinner("DesignBot está pensando..."):
                     response = st.session_state.chatbot.predict(prompt)
                 st.markdown(response)
-            
+
             # Agregar respuesta del bot al historial
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append(
+                {"role": "assistant", "content": response})
+
 
 if __name__ == "__main__":
     main()
