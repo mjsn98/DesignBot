@@ -28,3 +28,22 @@ Se recomienda crear un entorno virtual.
 ```bash
 git clone https://github.com/mjsn98/DesignBot.git
 cd DesignBot
+```
+### 2️⃣ Crear entorno virtual (recomendado)
+```bash
+pip install -r requirements.txt
+```
+### 3️⃣ Instalar dependencias
+```bash
+python3.10 -m venv entorno
+source entorno/bin/activate       # Linux / Mac
+entorno\Scripts\activate          # Windows
+```
+### ▶️ Ejecución de la aplicación
+```bash
+streamlit run app.py
+```
+### ▶️ Abrir en navegador
+```bash
+http://localhost:8501
+```
