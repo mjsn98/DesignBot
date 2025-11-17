@@ -114,6 +114,11 @@ class DesignBotLLM(BaseLanguageModel):
         return "designbot-compatible"
 
     def _call(self, prompt: str, stop=None, **kwargs):
+        # DEBUG: Ver el prompt completo para entender la estructura
+        print("=== PROMPT COMPLETO ===")
+        print(repr(prompt))
+        print("======================")
+
         # Estrategia múltiple para extraer el input del usuario
         user_input = ""
 
@@ -139,19 +144,29 @@ class DesignBotLLM(BaseLanguageModel):
                 user_input = line[6:].strip()
                 break
 
-            # Estrategia 4: Si estamos en la última línea y no tiene prefijo conocido
-            elif i == len(lines)-1 and not any(line.startswith(x) for x in ['AI:', 'DesignBot:', 'System:']):
-                user_input = line
-                break
+            # Estrategia 4: Buscar líneas que contengan el input del usuario sin prefijo
+            elif not any(line.startswith(prefix) for prefix in ['AI:', 'DesignBot:', 'System:', 'Historial', 'Sistema:']):
+                # Si la línea no es una respuesta del bot o metadata, podría ser input del usuario
+                if line and not line.startswith('¡') and not 'diseño' in line.lower() and not 'mueble' in line.lower():
+                    user_input = line
+                    break
 
-        # Si no encontramos nada, usar la última línea
+        # Si no encontramos nada, usar la última línea que no sea del bot
         if not user_input:
+            for line in reversed(lines):
+                if line.strip() and not any(line.strip().startswith(prefix) for prefix in ['AI:', 'DesignBot:']):
+                    user_input = line.strip()
+                    break
+
+        # Si todavía no tenemos input, usar la última línea
+        if not user_input and lines:
             user_input = lines[-1].strip()
 
         # Limpiar posibles restos de prefijos
         user_input = user_input.replace('Human:', '').replace(
             'Usuario:', '').replace('input:', '').strip()
 
+        print(f"Input extraído: '{user_input}'")
         user_input_lower = user_input.lower()
 
         # --- LÓGICA PRINCIPAL MEJORADA ---
@@ -179,33 +194,41 @@ class DesignBotLLM(BaseLanguageModel):
                 else:
                     return "¡Entendido! Fue un placer ayudarte. 😊\n\nSi en el futuro necesitas diseñar muebles, ¡estaré aquí para ayudarte! ¡Hasta pronto!"
 
-        # SALUDO INICIAL
+        # SALUDO INICIAL - LÓGICA MEJORADA
         if self.diseno_manager.estado == EstadoDiseno.INICIO:
+            # Si es un saludo simple
             if any(s in user_input_lower for s in ["hola", "hello", "buenos días", "buenas"]):
-                if any(indicador in user_input_lower for indicador in ["me llamo", "soy", "nombre es"]):
-                    # Extraer nombre
-                    if "me llamo" in user_input_lower:
-                        nombre = user_input_lower.split("me llamo")[1].strip()
-                    elif "soy" in user_input_lower:
-                        nombre = user_input_lower.split("soy")[1].strip()
-                    elif "nombre es" in user_input_lower:
-                        nombre = user_input_lower.split("nombre es")[1].strip()
-                    else:
-                        nombre = user_input_lower
+                return "¡Hola! Soy DesignBot, tu asistente para diseño de muebles. ¿Cómo te llamas?"
 
-                    # Tomar solo la primera palabra como nombre
-                    self.nombre_cliente = nombre.split()[0].title()
-                    self.diseno_manager.estado = EstadoDiseno.ESPERANDO_TIPO_MUEBLE
-                    return f"¡Hola {self.nombre_cliente}! ¿Qué tipo de mueble te gustaría diseñar? Tenemos: silla, mesa, sofá, estantería."
-                else:
-                    return "¡Hola! Soy DesignBot, tu asistente para diseño de muebles. ¿Cómo te llamas?"
+            # Detectar si el usuario está diciendo su nombre (MEJORADO)
+            nombre_detectado = None
 
-            # Si es solo un nombre
+            # Patrón "Soy [nombre]"
+            if user_input_lower.startswith("soy "):
+                # Tomar primera palabra después de "soy"
+                nombre_detectado = user_input[4:].strip().split()[0]
+
+            # Patrón "Me llamo [nombre]"
+            elif user_input_lower.startswith("me llamo "):
+                # Tomar primera palabra después de "me llamo"
+                nombre_detectado = user_input[9:].strip().split()[0]
+
+            # Patrón "Mi nombre es [nombre]"
+            elif "mi nombre es" in user_input_lower:
+                nombre_detectado = user_input_lower.split(
+                    "mi nombre es")[1].strip().split()[0]
+
+            # Si es solo un nombre (una sola palabra)
             elif len(user_input.split()) == 1 and user_input.replace('.', '').replace(',', '').isalpha():
-                self.nombre_cliente = user_input.title()
+                nombre_detectado = user_input
+
+            # Si detectamos un nombre
+            if nombre_detectado:
+                self.nombre_cliente = nombre_detectado.title()
                 self.diseno_manager.estado = EstadoDiseno.ESPERANDO_TIPO_MUEBLE
                 return f"¡Hola {self.nombre_cliente}! ¿Qué tipo de mueble te gustaría diseñar? Tenemos: silla, mesa, sofá, estantería."
 
+        # Resto de la lógica permanece igual...
         # TIPO DE MUEBLE
         if self.diseno_manager.estado == EstadoDiseno.ESPERANDO_TIPO_MUEBLE:
             tipos = {
@@ -225,6 +248,8 @@ class DesignBotLLM(BaseLanguageModel):
 
             # Si no reconoce el tipo de mueble
             return "No reconozco ese tipo de mueble. ¿Podrías elegir entre: silla, mesa, sofá o estantería?"
+
+    # ... (el resto del código permanece igual)
 
         # MATERIAL
         if self.diseno_manager.estado == EstadoDiseno.ESPERANDO_MATERIAL:
